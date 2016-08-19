@@ -4,10 +4,10 @@ using SimpleDns.Internal;
 using Pipeliner.Builder;
 
 namespace SimpleDns.Pipeline {
-    public class LocalDnsMiddleware : IPipelineMiddleware<ISocketContext> {
+    public class DnsMiddleware : IPipelineMiddleware<ISocketContext> {
         private readonly DnsResponseFactory _responseFactory;
 
-        public LocalDnsMiddleware(DnsResponseFactory responseFactory) {
+        public DnsMiddleware(DnsResponseFactory responseFactory) {
             if (responseFactory == null)
                 throw new ArgumentNullException(nameof(responseFactory));
 

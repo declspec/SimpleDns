@@ -17,8 +17,9 @@ namespace SimpleDns {
             });
 
             var pipeline = new PipelineBuilder<ISocketContext>()
-                .UseMiddleware<LocalDnsMiddleware>(responseFactory)
-                .Build(DumpPacket);
+                .UseMiddleware(DumpPacket)
+                .UseMiddleware(new DnsMiddleware(responseFactory))
+                .Build(async context => await context.End());
 
             RunServer(pipeline).Wait();
         }
@@ -41,20 +42,18 @@ namespace SimpleDns {
             }
         }
 
-        public static Task DumpPacket(ISocketContext context) {
+        public static async Task DumpPacket(ISocketContext context, PipelineDelegate<ISocketContext> next) {
             var buffer = new char[64];
             int displayOffset = 16 * 3,
                 remaining = context.Data.Length,
                 b = 0, c = 0;
                 
-            Console.WriteLine("=== PACKET ===");
+            Console.WriteLine("\ninfo: incoming packet\n");
 
             while (remaining > 0) {
                 for(int i = 0; i < 16; ++i) {
                     if (remaining == 0) {
-                        buffer[i * 3] = ' ';
-                        buffer[i * 3 + 1] = ' ';
-                        buffer[i * 3 + 2] = ' ';
+                        buffer[i * 3] = buffer[i * 3 + 1] = buffer[i * 3 + 2] = ' ';
                         buffer[displayOffset + i] = ' ';
                     }
                     else {
@@ -71,10 +70,10 @@ namespace SimpleDns {
                 }
 
                 Console.WriteLine(new string(buffer));
-                Console.WriteLine();
             }
 
-            return Task.FromResult(0);
+            Console.WriteLine();
+            await next.Invoke(context);
         }
     }
 }

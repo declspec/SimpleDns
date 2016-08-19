@@ -5,6 +5,7 @@ using System.Threading.Tasks;
 
 namespace Pipeliner.Builder {
     public delegate Task PipelineDelegate<TContext>(TContext context);
+    public delegate Task MiddlewareDelegate<TContext>(TContext context, PipelineDelegate<TContext> next);
     public delegate PipelineDelegate<TContext> MiddlewareProviderDelegate<TContext>(PipelineDelegate<TContext> next);
 
     public interface IPipelineMiddleware<TContext> {
@@ -20,6 +21,7 @@ namespace Pipeliner.Builder {
         IPipelineBuilder<TContext> Use(IPipelineMiddlewareProvider<TContext> provider);  
         IPipelineBuilder<TContext> Use<TProvider>(params object[] args) where TProvider : IPipelineMiddlewareProvider<TContext>;
 
+        IPipelineBuilder<TContext> UseMiddleware(MiddlewareDelegate<TContext> middleware);
         IPipelineBuilder<TContext> UseMiddleware(IPipelineMiddleware<TContext> middleware);
         IPipelineBuilder<TContext> UseMiddleware<TMiddleware>(params object[] args) where TMiddleware : IPipelineMiddleware<TContext>;
 
@@ -54,11 +56,18 @@ namespace Pipeliner.Builder {
             return Use(instance);
         }
 
+        public IPipelineBuilder<TContext> UseMiddleware(MiddlewareDelegate<TContext> middleware) {
+            if (middleware == null)
+                throw new ArgumentNullException(nameof(middleware));
+            
+            return Use(next => async context => await middleware.Invoke(context, next));
+        }
+
         public IPipelineBuilder<TContext> UseMiddleware(IPipelineMiddleware<TContext> middleware) {
             if (middleware == null)
                 throw new ArgumentNullException(nameof(middleware));
 
-            return Use(next => async context => await middleware.Handle(context, next));
+            return UseMiddleware(middleware.Handle);
         }
 
         public IPipelineBuilder<TContext> UseMiddleware<TMiddleware>(params object[] args) where TMiddleware : IPipelineMiddleware<TContext> {
