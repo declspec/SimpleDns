@@ -1,21 +1,8 @@
 using System;
 using System.Linq;
 using System.Collections.Generic;
-using System.Threading.Tasks;
 
 namespace Pipeliner.Builder {
-    public delegate Task PipelineDelegate<TContext>(TContext context);
-    public delegate Task MiddlewareDelegate<TContext>(TContext context, PipelineDelegate<TContext> next);
-    public delegate PipelineDelegate<TContext> MiddlewareProviderDelegate<TContext>(PipelineDelegate<TContext> next);
-
-    public interface IPipelineMiddleware<TContext> {
-        Task Handle(TContext context, PipelineDelegate<TContext> next);
-    }
-
-    public interface IPipelineMiddlewareProvider<TContext> {
-        PipelineDelegate<TContext> Provide(PipelineDelegate<TContext> next);
-    }
-
     public interface IPipelineBuilder<TContext> {
         IPipelineBuilder<TContext> Use(MiddlewareProviderDelegate<TContext> provider);
         IPipelineBuilder<TContext> Use(IPipelineMiddlewareProvider<TContext> provider);  

@@ -1,9 +1,20 @@
 using System.Threading.Tasks;
-using Pipeliner.Builder;
 
 namespace Pipeliner {
+    public delegate Task PipelineDelegate<TContext>(TContext context);
+    public delegate Task MiddlewareDelegate<TContext>(TContext context, PipelineDelegate<TContext> next);
+    public delegate PipelineDelegate<TContext> MiddlewareProviderDelegate<TContext>(PipelineDelegate<TContext> next);
+
     public interface IPipeline<TContext> {
         Task Run(TContext context);
+    }
+
+    public interface IPipelineMiddleware<TContext> {
+        Task Handle(TContext context, PipelineDelegate<TContext> next);
+    }
+
+    public interface IPipelineMiddlewareProvider<TContext> {
+        PipelineDelegate<TContext> Provide(PipelineDelegate<TContext> next);
     }
 
     public class Pipeline<TContext> : IPipeline<TContext> {

@@ -4,20 +4,22 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Runtime.CompilerServices;
 
-namespace SimpleDns.Internal {
+namespace SimpleDns.Network {
     // Full credit to Stephen Toub for this
     // see: https://blogs.msdn.microsoft.com/pfxteam/2011/12/15/awaiting-socket-operations/
-    public sealed class AsyncSocketHandler : INotifyCompletion
+    public sealed class AsyncSocketWrapper : INotifyCompletion
     {
         private static readonly Action SENTINEL = () => { };
 
-        public SocketAsyncEventArgs EventArgs { get; }
+        public SocketAsyncEventArgsEx EventArgs { get; }
+        public Socket Socket { get { return _socket; } }
         public bool IsCompleted { get { return _completed; }}
 
         private bool _completed;
         private Action _continuation;
+        private Socket _socket;
        
-        public AsyncSocketHandler(SocketAsyncEventArgs eventArgs) {
+        public AsyncSocketWrapper(SocketAsyncEventArgsEx eventArgs) {
             if (eventArgs == null)
                 throw new ArgumentNullException(nameof(eventArgs));
 
@@ -28,49 +30,58 @@ namespace SimpleDns.Internal {
             _continuation = null;
         }
 
-        public AsyncSocketHandler ReceiveAsync(Socket socket) {
+        public void Wrap(Socket socket) {
+            _socket = socket;
+        }
+
+        public AsyncSocketWrapper Unwrap() {
+            _socket = null;
+            return this;        
+        }
+
+        public AsyncSocketWrapper ReceiveAsync() {
             Reset();
-            if (!socket.ReceiveAsync(EventArgs))
+            if (!_socket.ReceiveAsync(EventArgs))
                 _completed = true;
             return this;
         }
 
-        public AsyncSocketHandler SendAsync(Socket socket) {
+        public AsyncSocketWrapper SendAsync() {
             Reset();
-            if (!socket.SendAsync(EventArgs))
+            if (!_socket.SendAsync(EventArgs))
                 _completed = true;
             return this;
         }
 
-        public AsyncSocketHandler AcceptAsync(Socket socket) {
+        public AsyncSocketWrapper AcceptAsync() {
             Reset();
-            if (!socket.AcceptAsync(EventArgs))
+            if (!_socket.AcceptAsync(EventArgs))
                 _completed = true;
             return this;
         }
 
-        public AsyncSocketHandler ConnectAsync(Socket socket) {
+        public AsyncSocketWrapper ConnectAsync() {
             Reset();
-            if (!socket.AcceptAsync(EventArgs))
+            if (!_socket.AcceptAsync(EventArgs))
                 _completed = true;
             return this;
         }
 
-        public AsyncSocketHandler ReceiveFromAsync(Socket socket) {
+        public AsyncSocketWrapper ReceiveFromAsync() {
             Reset();
-            if (!socket.ReceiveFromAsync(EventArgs))
+            if (!_socket.ReceiveFromAsync(EventArgs))
                 _completed = true;
             return this;
         }
 
-        public AsyncSocketHandler SendToAsync(Socket socket) {
+        public AsyncSocketWrapper SendToAsync() {
             Reset();
-            if (!socket.SendToAsync(EventArgs))
+            if (!_socket.SendToAsync(EventArgs))
                 _completed = true;
             return this;
         }
 
-        public AsyncSocketHandler GetAwaiter() {
+        public AsyncSocketWrapper GetAwaiter() {
             return this;
         }
 
@@ -82,6 +93,9 @@ namespace SimpleDns.Internal {
         private void Reset() {
             _completed = false;
             _continuation = null;
+
+            if (_socket == null)
+                throw new InvalidOperationException("Must first wrap a socket before attempting this operation");
         }
 
         public void OnCompleted(Action continuation)
@@ -92,8 +106,8 @@ namespace SimpleDns.Internal {
 
         private void OnEventCompleted(object sender, SocketAsyncEventArgs args) {
             var previous = _continuation ?? Interlocked.CompareExchange(ref _continuation, SENTINEL, null);
-                if (previous != null)
-                    previous.Invoke();
+            if (previous != null)
+                previous.Invoke();
         }
     }
 }

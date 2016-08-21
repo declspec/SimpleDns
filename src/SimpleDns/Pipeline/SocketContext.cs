@@ -1,12 +1,15 @@
+using System;
 using System.Net;
 using System.Net.Sockets;
 using System.Threading.Tasks;
 using SimpleDns.Internal;
+using SimpleDns.Network;
 
 namespace SimpleDns.Pipeline {
     public interface ISocketContext {
         ProtocolType Protocol { get; }
         ArraySlice<byte> Data { get; }
+        AsyncSocketWrapper SocketWrapper { get; }
 
         Task End(ArraySlice<byte> response);
         Task End();
@@ -15,19 +18,33 @@ namespace SimpleDns.Pipeline {
     public class UdpSocketContext : ISocketContext {
         public ProtocolType Protocol { get { return ProtocolType.Udp; }}
         public ArraySlice<byte> Data { get; }
+        public AsyncSocketWrapper SocketWrapper { get; }
 
-        private readonly Socket _socket;
         private readonly EndPoint _client;
+        private readonly Socket _socket;        
         
-        public UdpSocketContext(Socket socket, EndPoint client, ArraySlice<byte> data) {
+        public UdpSocketContext(AsyncSocketWrapper socketWrapper, EndPoint client, ArraySlice<byte> data) {
             Data = data;
-            _socket = socket;
+            SocketWrapper = socketWrapper;
+
+            // Store the original socket for later use
+            _socket = SocketWrapper.Socket;
             _client = client;
         }
         
-        public Task End(ArraySlice<byte> response) {
-            _socket.SendTo(response.Array, response.Offset, response.Length, SocketFlags.None, _client);
-            return Task.FromResult(0);
+        public async Task End(ArraySlice<byte> response) {
+            // Configure the wrapper
+            SocketWrapper.Wrap(_socket);
+            
+            var args = SocketWrapper.EventArgs;
+            args.RemoteEndPoint = _client;
+
+            // Copy the response into the buffer
+            if (response.Array != args.Buffer || response.Offset != args.Offset)
+                Buffer.BlockCopy(response.Array, response.Offset, args.Buffer, args.Offset, response.Length);
+
+            args.SetBufferLength(response.Length);
+            await SocketWrapper.SendToAsync();
         }
 
         public Task End() {

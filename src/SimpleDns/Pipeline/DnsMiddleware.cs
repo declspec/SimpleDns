@@ -1,7 +1,7 @@
 using System;
 using System.Threading.Tasks;
 using SimpleDns.Internal;
-using Pipeliner.Builder;
+using Pipeliner;
 
 namespace SimpleDns.Pipeline {
     public class DnsMiddleware : IPipelineMiddleware<ISocketContext> {

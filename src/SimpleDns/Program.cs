@@ -1,79 +1,142 @@
 using System;
+using System.Linq;
 using System.Net;
 using System.Net.Sockets;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
-
 using Pipeliner;
 using Pipeliner.Builder;
 using SimpleDns.Internal;
+using SimpleDns.Network;
 using SimpleDns.Pipeline;
 
 namespace SimpleDns {
     public static class Program {
+        private const int MaximumConnections = 10;
+        private const int UdpPacketSize = 512;
+
         public static void Main(string[] args) {
+            var pool = CreatePool();
+
+            // create a 'finally' handler that will return the wrapper to the pool
+            var releaser = new PipelineDelegate<ISocketContext>(context => { 
+                pool.Release(context.SocketWrapper);
+                return Task.FromResult(0);
+            });
+
+            // TODO: Actually build a proper resource record generator
             var responseFactory = new DnsResponseFactory(new[] {
                 new ResourceRecord(IPAddress.Parse("192.168.56.104"), 5000, new Regex("(?:webdev|dev\\.io)$"))
             });
 
             var pipeline = new PipelineBuilder<ISocketContext>()
-                .UseMiddleware(DumpPacket)
+                .UseMiddleware(new FinallyMiddleware<ISocketContext>(releaser))
+                .UseMiddleware(new PacketDumpMiddleware(Console.Out))
                 .UseMiddleware(new DnsMiddleware(responseFactory))
+                .UseMiddleware(new UdpProxyMiddleware(new IPEndPoint(IPAddress.Parse("8.8.8.8"), 53)))
                 .Build(async context => await context.End());
 
-            RunServer(pipeline).Wait();
+            RunServer(pipeline, pool).Wait();
         }
 
-        public static async Task RunServer(IPipeline<ISocketContext> pipeline) {
+        private static SparsePool<AsyncSocketWrapper> CreatePool() {
+            // Define a sparse pool of async socket wrappers
+            // from a fixed-size buffer to reduce allocations and memory fragmentation
+            var buffer = new byte[UdpPacketSize * MaximumConnections];
+
+            return new SparsePool<AsyncSocketWrapper>(10, n => {
+                var args = new SocketAsyncEventArgsEx(buffer, UdpPacketSize * n, UdpPacketSize);
+                return new AsyncSocketWrapper(args);
+            });
+        }
+
+        public static async Task RunServer(IPipeline<ISocketContext> pipeline, SparsePool<AsyncSocketWrapper> pool) {
             var localAddress = new IPEndPoint(IPAddress.Any, 53);
-            var client = (EndPoint)(new IPEndPoint(IPAddress.Any, 0));
-            var buffer = new byte[512];
 
             using (var master = new Socket(localAddress.AddressFamily, SocketType.Dgram, ProtocolType.Udp)) {
                 master.Bind(localAddress);
 
-                while (true) {
-                    var len = master.ReceiveFrom(buffer, ref client);
-                    var packet = new ArraySlice<byte>(buffer, 0, len);
+                while(true) {
+                    // Get a wrapper from the pool and configure it, this will
+                    // block until the pool has an available wrapper
+                    var wrapper = await pool.Acquire();
+                    wrapper.Wrap(master);
+                    wrapper.EventArgs.ResetBuffer();
 
-                    var context = new UdpSocketContext(master, client, packet);
-                    await pipeline.Run(context);
+                    // Wait for the next request
+                    var client = (EndPoint)(new IPEndPoint(IPAddress.Any, 0));
+                    wrapper.EventArgs.RemoteEndPoint = client;
+                    await wrapper.ReceiveFromAsync();
+                   
+                    // Create the context and dispatch the request
+                    var data = new ArraySlice<byte>(wrapper.EventArgs.Buffer, wrapper.EventArgs.Offset, wrapper.EventArgs.BytesTransferred);
+                    var context = new UdpSocketContext(wrapper, wrapper.EventArgs.RemoteEndPoint, data);
+                    // No need for an await here, the `Pool.Acquire()` above will
+                    // enforce blocking once too many concurrent requests stack up.
+                    pipeline.Run(context);
+                }
+            }
+        }
+/*
+        private static Options GetOptions(string[] args) {
+            var results = OptionParser.Parse(args, 'h', 's', 'l');
+            if (string.IsNullOrEmpty(results['h']))
+                throw new FormatException("please specify the path to the hosts file to use");
+            
+            if (string.IsNullOrEmpty(results['s']))
+                throw new FormatException("please specify the ip:port combination of the DNS server to forward requests to");
+            
+            IPEndPoint serverAddr;
+            IPEndPoint localAddr;
+
+            if (!TryParseEndPoint(results['s'], out serverAddr))
+                throw new FormatException("dns server address must be in the form 'ip:port' (i.e 127.0.0.1:53)");
+            
+            if (!TryParseEndPoint(results['l'] ?? "127.0.0.1:53", out localAddr))
+                throw new FormatException("local address must be in the form 'ip:port' (i.e 127.0.0.1:53)");
+            
+            return new Options(results['h'], serverAddr, localAddr);
+        }
+
+        private static IEnumerable<ResourceRecord> GetResourceRecords(string file) {
+            using(var fs = new FileStream(file, FileMode.Open, FileAccess.Read))
+            using(var sr = new StreamReader(fs)) {
+                string line = null;
+                while((line = sr.ReadLine()) != null) {
+                    if (!line.StartsWith("#@"))
+                        continue;
+                    
+                    line = line.Substring(2).Trim();
+                    ResourceRecord record = null;
+
+                    try {
+                        record = ResourceRecord.Parse(line);
+                    }
+                    catch(FormatException f) {
+                        Console.WriteLine("warning: skipping '{0}' ({1})", line, f.Message);
+                    }
+
+                    if (record != null)
+                        yield return record;
                 }
             }
         }
 
-        public static async Task DumpPacket(ISocketContext context, PipelineDelegate<ISocketContext> next) {
-            var buffer = new char[64];
-            int displayOffset = 16 * 3,
-                remaining = context.Data.Length,
-                b = 0, c = 0;
-                
-            Console.WriteLine("\ninfo: incoming packet\n");
+        private static bool TryParseEndPoint(string str, out IPEndPoint ep) {
+            ep = new IPEndPoint(IPAddress.Any, 0);
+            var parts = str.Split(':');
+            
+            if (parts.Length != 2)
+                return false;
+            
+            IPAddress ip;
+            int port;
 
-            while (remaining > 0) {
-                for(int i = 0; i < 16; ++i) {
-                    if (remaining == 0) {
-                        buffer[i * 3] = buffer[i * 3 + 1] = buffer[i * 3 + 2] = ' ';
-                        buffer[displayOffset + i] = ' ';
-                    }
-                    else {
-                        c = context.Data[context.Data.Length - remaining];
-                        b = c >> 4;
-                        buffer[i * 3] = (char)(55 + b + (((b-10)>>31)&-7));
-                        b = c & 0xF;
-                        buffer[i * 3 + 1] = (char)(55 + b + (((b-10)>>31)&-7));
-                        buffer[i * 3 + 2] = ' ';
-
-                        buffer[displayOffset + i] = char.IsControl((char)c) ? '.' : (char)c;
-                        --remaining;
-                    }
-                }
-
-                Console.WriteLine(new string(buffer));
-            }
-
-            Console.WriteLine();
-            await next.Invoke(context);
-        }
+            if (!IPAddress.TryParse(parts[0], out ip) || !int.TryParse(parts[1], out port))
+                return false;
+            
+            ep = new IPEndPoint(ip, port);
+            return true;
+        }*/
     }
 }
