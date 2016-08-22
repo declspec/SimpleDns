@@ -44,7 +44,7 @@ namespace SimpleDns {
             // from a fixed-size buffer to reduce allocations and memory fragmentation
             var buffer = new byte[UdpPacketSize * MaximumConnections];
 
-            return new SparsePool<AsyncSocketWrapper>(10, n => {
+            return new SparsePool<AsyncSocketWrapper>(MaximumConnections, n => {
                 var args = new SocketAsyncEventArgsEx(buffer, UdpPacketSize * n, UdpPacketSize);
                 return new AsyncSocketWrapper(args);
             });

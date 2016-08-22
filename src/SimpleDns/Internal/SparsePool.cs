@@ -20,6 +20,7 @@ namespace SimpleDns.Internal {
             _resources = new List<T>(capacity);
             _available = new Stack<T>(capacity);
             _waiting = new Queue<TaskCompletionSource<T>>();
+            _freeIndexes = new Stack<int>();
         }
     
         public async Task<T> Acquire() {
