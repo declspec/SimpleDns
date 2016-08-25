@@ -83,15 +83,20 @@ namespace SimpleDns {
             }
         }
 
-        private static void New() {
+        private static async Task New() {
             // Define a sparse pool of async socket wrappers
             // from a fixed-size buffer to reduce allocations and memory fragmentation
             var buffer = new byte[UdpPacketSize * MaximumConnections];
 
-            var pool = new ObjectPool<AsyncSocketWrapper>(MaximumConnections, true, n => {
+            var pool = new AsyncObjectPool<AsyncSocketWrapper>(MaximumConnections, n => {
                 var args = new SocketAsyncEventArgsEx(buffer, UdpPacketSize * n, UdpPacketSize);
                 return new AsyncSocketWrapper(args);
             });
+
+            while(true) {
+                var wrapper = await pool.Acquire(CancellationToken.None);
+                
+            }
 
             for(int i = 0; i < MaximumConnections; ++i) {
                 var request = GetRequest(pool.Acquire());
