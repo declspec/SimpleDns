@@ -82,6 +82,25 @@ namespace SimpleDns {
                 }
             }
         }
+
+        private static void New() {
+            // Define a sparse pool of async socket wrappers
+            // from a fixed-size buffer to reduce allocations and memory fragmentation
+            var buffer = new byte[UdpPacketSize * MaximumConnections];
+
+            var pool = new ObjectPool<AsyncSocketWrapper>(MaximumConnections, true, n => {
+                var args = new SocketAsyncEventArgsEx(buffer, UdpPacketSize * n, UdpPacketSize);
+                return new AsyncSocketWrapper(args);
+            });
+
+            for(int i = 0; i < MaximumConnections; ++i) {
+                var request = GetRequest(pool.Acquire());
+            }
+        }
+
+        private static Task GetRequest(AsyncSocketWrapper wrapper) {
+
+        }
 /*
         private static Options GetOptions(string[] args) {
             var results = OptionParser.Parse(args, 'h', 's', 'l');
