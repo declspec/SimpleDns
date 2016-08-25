@@ -4,6 +4,7 @@ using System.Net;
 using System.Net.Sockets;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
+using System.Threading;
 using Pipeliner;
 using Pipeliner.Builder;
 using SimpleDns.Internal;
@@ -59,7 +60,7 @@ namespace SimpleDns {
                 while(true) {
                     // Get a wrapper from the pool and configure it, this will
                     // block until the pool has an available wrapper
-                    var wrapper = await pool.Acquire();
+                    var wrapper = await pool.Acquire(CancellationToken.None);
                     wrapper.Wrap(master);
                     wrapper.EventArgs.ResetBuffer();
 
@@ -68,9 +69,13 @@ namespace SimpleDns {
                     wrapper.EventArgs.RemoteEndPoint = client;
                     await wrapper.ReceiveFromAsync();
                    
+                    // Allocate 5 seconds for all requests
+                    var cts = new CancellationTokenSource(2000);
+
                     // Create the context and dispatch the request
                     var data = new ArraySlice<byte>(wrapper.EventArgs.Buffer, wrapper.EventArgs.Offset, wrapper.EventArgs.BytesTransferred);
-                    var context = new UdpSocketContext(wrapper, wrapper.EventArgs.RemoteEndPoint, data);
+                    var context = new UdpSocketContext(wrapper, wrapper.EventArgs.RemoteEndPoint, data, cts.Token);
+
                     // No need for an await here, the `Pool.Acquire()` above will
                     // enforce blocking once too many concurrent requests stack up.
                     pipeline.Run(context);

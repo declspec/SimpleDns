@@ -19,26 +19,47 @@ namespace SimpleDns.Pipeline {
         }
 
         public async Task Handle(ISocketContext context, PipelineDelegate<ISocketContext> next) {
-            var socket = await _sockets.Acquire();
+            context.CancellationToken.ThrowIfCancellationRequested();
 
-            try {
-                // TODO: Work on fault tolerance as well as timeouts on the receive.
-                context.SocketWrapper.Wrap(socket);
+            var socket = await _sockets.Acquire(context.CancellationToken);
 
-                var args = context.SocketWrapper.EventArgs;
-                args.RemoteEndPoint = _target;
+            var cancellationHandler = new Action(() => {
+                // If the token gets cancelled we dispose the underlying socket
+                // which will force any async method to shutdown with an error.
+                if (socket != null)
+                    socket.Dispose();
+                Console.WriteLine("cancelled");
+            });
 
-                args.SetBufferLength(context.Data.Length);
-                await context.SocketWrapper.SendToAsync();
+            using(context.CancellationToken.Register(cancellationHandler, false)) {
+                try {
+                    context.SocketWrapper.Wrap(socket);
 
-                args.ResetBuffer();
-                await context.SocketWrapper.ReceiveFromAsync();
+                    var args = context.SocketWrapper.EventArgs;
+                    args.RemoteEndPoint = _target;
 
-                var response = new ArraySlice<byte>(args.Buffer, args.Offset, args.BytesTransferred);
-                await context.End(response);
-            }
-            finally {
-                _sockets.Release(socket);
+                    args.SetBufferLength(context.Data.Length);
+                    await context.SocketWrapper.SendToAsync();
+
+                    args.ResetBuffer();
+                    await context.SocketWrapper.ReceiveFromAsync();
+
+                    // Release the socket back into the pool
+                    _sockets.Release(socket);
+                    socket = null;
+
+                    var response = new ArraySlice<byte>(args.Buffer, args.Offset, args.BytesTransferred);
+                    await context.End(response);
+                }
+                catch(SocketException) {
+                    _sockets.Remove(socket);
+                    socket = null;
+                    throw;
+                }
+                finally {
+                    if (socket != null)
+                        _sockets.Release(socket);
+                }
             }
         }
 

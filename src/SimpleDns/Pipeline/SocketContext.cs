@@ -1,6 +1,7 @@
 using System;
 using System.Net;
 using System.Net.Sockets;
+using System.Threading;
 using System.Threading.Tasks;
 using SimpleDns.Internal;
 using SimpleDns.Network;
@@ -10,6 +11,7 @@ namespace SimpleDns.Pipeline {
         ProtocolType Protocol { get; }
         ArraySlice<byte> Data { get; }
         AsyncSocketWrapper SocketWrapper { get; }
+        CancellationToken CancellationToken { get; }
 
         Task End(ArraySlice<byte> response);
         Task End();
@@ -19,13 +21,15 @@ namespace SimpleDns.Pipeline {
         public ProtocolType Protocol { get { return ProtocolType.Udp; }}
         public ArraySlice<byte> Data { get; }
         public AsyncSocketWrapper SocketWrapper { get; }
+        public CancellationToken CancellationToken { get; }
 
         private readonly EndPoint _client;
         private readonly Socket _socket;        
         
-        public UdpSocketContext(AsyncSocketWrapper socketWrapper, EndPoint client, ArraySlice<byte> data) {
+        public UdpSocketContext(AsyncSocketWrapper socketWrapper, EndPoint client, ArraySlice<byte> data, CancellationToken token) {
             Data = data;
             SocketWrapper = socketWrapper;
+            CancellationToken = token;
 
             // Store the original socket for later use
             _socket = SocketWrapper.Socket;
