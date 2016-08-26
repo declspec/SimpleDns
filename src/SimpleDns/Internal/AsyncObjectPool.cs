@@ -35,7 +35,7 @@ namespace SimpleDns.Internal {
                 _waiting.AddLast(tcs);
 
             if (!token.CanBeCanceled)
-                return await tcs.Task;
+                return await tcs.Task.ConfigureAwait(false);
 
             // Configure cancellation handling
             var cancellationHandler = new Action(() => {
