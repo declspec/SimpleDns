@@ -61,7 +61,7 @@ namespace SimpleDns {
             var pipeline = new PipelineBuilder<ISocketContext>()
                 //.UseMiddleware(new PacketDumpMiddleware(Console.Out))
                 .UseMiddleware(new DnsMiddleware(responseFactory))
-                .UseMiddleware(new UdpProxyMiddleware(new IPEndPoint(IPAddress.Parse("134.7.134.7"), 53)))
+                .UseMiddleware(new UdpProxyMiddleware(options.DnsServer))
                 .Build(async context => await context.End());
 
             var task = RunServer(options, pipeline, CancellationToken.None);
@@ -107,7 +107,7 @@ namespace SimpleDns {
 
                             if (task.IsFaulted) {
                                 foreach(var ex in task.Exception.InnerExceptions)
-                                    Console.WriteLine("error: {0}", ex.Message);
+                                    Console.WriteLine("error: {0}", ex.ToString());
                             }
                         });
                     }
