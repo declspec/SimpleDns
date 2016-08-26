@@ -17,73 +17,21 @@ namespace SimpleDns {
         private const int UdpPacketSize = 512;
 
         public static void Main(string[] args) {
-            var pool = CreatePool();
-
-            // create a 'finally' handler that will return the wrapper to the pool
-            var releaser = new PipelineDelegate<ISocketContext>(context => { 
-                pool.Release(context.SocketWrapper);
-                return Task.FromResult(0);
-            });
-
             // TODO: Actually build a proper resource record generator
             var responseFactory = new DnsResponseFactory(new[] {
                 new ResourceRecord(IPAddress.Parse("192.168.56.104"), 5000, new Regex("(?:webdev|dev\\.io)$"))
             });
 
             var pipeline = new PipelineBuilder<ISocketContext>()
-                .UseMiddleware(new FinallyMiddleware<ISocketContext>(releaser))
                 .UseMiddleware(new PacketDumpMiddleware(Console.Out))
                 .UseMiddleware(new DnsMiddleware(responseFactory))
-                .UseMiddleware(new UdpProxyMiddleware(new IPEndPoint(IPAddress.Parse("8.8.8.8"), 53)))
+                .UseMiddleware(new UdpProxyMiddleware(new IPEndPoint(IPAddress.Parse("134.7.134.7"), 53)))
                 .Build(async context => await context.End());
 
-            RunServer(pipeline, pool).Wait();
+            RunServer(pipeline, CancellationToken.None).Wait();
         }
 
-        private static SparsePool<AsyncSocketWrapper> CreatePool() {
-            // Define a sparse pool of async socket wrappers
-            // from a fixed-size buffer to reduce allocations and memory fragmentation
-            var buffer = new byte[UdpPacketSize * MaximumConnections];
-
-            return new SparsePool<AsyncSocketWrapper>(MaximumConnections, n => {
-                var args = new SocketAsyncEventArgsEx(buffer, UdpPacketSize * n, UdpPacketSize);
-                return new AsyncSocketWrapper(args);
-            });
-        }
-
-        public static async Task RunServer(IPipeline<ISocketContext> pipeline, SparsePool<AsyncSocketWrapper> pool) {
-            var localAddress = new IPEndPoint(IPAddress.Any, 53);
-
-            using (var master = new Socket(localAddress.AddressFamily, SocketType.Dgram, ProtocolType.Udp)) {
-                master.Bind(localAddress);
-
-                while(true) {
-                    // Get a wrapper from the pool and configure it, this will
-                    // block until the pool has an available wrapper
-                    var wrapper = await pool.Acquire(CancellationToken.None);
-                    wrapper.Wrap(master);
-                    wrapper.EventArgs.ResetBuffer();
-
-                    // Wait for the next request
-                    var client = (EndPoint)(new IPEndPoint(IPAddress.Any, 0));
-                    wrapper.EventArgs.RemoteEndPoint = client;
-                    await wrapper.ReceiveFromAsync();
-                   
-                    // Allocate 5 seconds for all requests
-                    var cts = new CancellationTokenSource(2000);
-
-                    // Create the context and dispatch the request
-                    var data = new ArraySlice<byte>(wrapper.EventArgs.Buffer, wrapper.EventArgs.Offset, wrapper.EventArgs.BytesTransferred);
-                    var context = new UdpSocketContext(wrapper, wrapper.EventArgs.RemoteEndPoint, data, cts.Token);
-
-                    // No need for an await here, the `Pool.Acquire()` above will
-                    // enforce blocking once too many concurrent requests stack up.
-                    pipeline.Run(context);
-                }
-            }
-        }
-
-        private static async Task New() {
+        private static async Task RunServer(IPipeline<ISocketContext> pipeline, CancellationToken token) {
             // Define a sparse pool of async socket wrappers
             // from a fixed-size buffer to reduce allocations and memory fragmentation
             var buffer = new byte[UdpPacketSize * MaximumConnections];
@@ -93,18 +41,33 @@ namespace SimpleDns {
                 return new AsyncSocketWrapper(args);
             });
 
-            while(true) {
-                var wrapper = await pool.Acquire(CancellationToken.None);
-                
+            var localAddress = new IPEndPoint(IPAddress.Any, 53);
+
+            using (var master = new Socket(localAddress.AddressFamily, SocketType.Dgram, ProtocolType.Udp)) {
+                master.Bind(localAddress);
+
+                while(true) {
+                    var wrapper = await pool.Acquire(token);
+                    wrapper.Wrap(master);
+                    wrapper.EventArgs.ResetBuffer();
+
+                    // Wait for a request to come through
+                    var client = (EndPoint)(new IPEndPoint(IPAddress.Any, 0));
+                    wrapper.EventArgs.RemoteEndPoint = client;
+                    await wrapper.ReceiveFromAsync();
+
+                    // Allocate 2 seconds for each request and cancel them if the master token is cancelled
+                    var cts = CancellationTokenSource.CreateLinkedTokenSource(token);
+                    cts.CancelAfter(2000);
+
+                    // Create the context and dispatch the request.
+                    var data = new ArraySlice<byte>(wrapper.EventArgs.Buffer, wrapper.EventArgs.Offset, wrapper.EventArgs.BytesTransferred);
+                    var context = new UdpSocketContext(wrapper, wrapper.EventArgs.RemoteEndPoint, data, cts.Token);
+
+                    // Don't wait for the task to complete, 'Acquire' will block if too many requests come in.
+                    pipeline.Run(context).ContinueWith(_ => pool.Free(context.SocketWrapper));
+                }
             }
-
-            for(int i = 0; i < MaximumConnections; ++i) {
-                var request = GetRequest(pool.Acquire());
-            }
-        }
-
-        private static Task GetRequest(AsyncSocketWrapper wrapper) {
-
         }
 /*
         private static Options GetOptions(string[] args) {
