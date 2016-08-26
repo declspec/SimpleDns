@@ -11,11 +11,11 @@ namespace SimpleDns.Pipeline {
         private static readonly EndPoint LocalEndPoint = new IPEndPoint(IPAddress.Any, 0);
 
         private readonly EndPoint _target;
-        private readonly SparsePool<Socket> _sockets;
+        private readonly AsyncObjectPool<Socket> _sockets;
 
         public UdpProxyMiddleware(EndPoint target) {
             _target = target;
-            _sockets = new SparsePool<Socket>(MaxSockets, GetSocket);
+            _sockets = new AsyncObjectPool<Socket>(MaxSockets, GetSocket);
         }
 
         public async Task Handle(ISocketContext context, PipelineDelegate<ISocketContext> next) {
@@ -28,7 +28,6 @@ namespace SimpleDns.Pipeline {
                 // which will force any async method to shutdown with an error.
                 if (socket != null)
                     socket.Dispose();
-                Console.WriteLine("cancelled");
             });
 
             using(context.CancellationToken.Register(cancellationHandler, false)) {
@@ -45,7 +44,7 @@ namespace SimpleDns.Pipeline {
                     await context.SocketWrapper.ReceiveFromAsync();
 
                     // Release the socket back into the pool
-                    _sockets.Release(socket);
+                    _sockets.Free(socket);
                     socket = null;
 
                     var response = new ArraySlice<byte>(args.Buffer, args.Offset, args.BytesTransferred);
@@ -58,7 +57,7 @@ namespace SimpleDns.Pipeline {
                 }
                 finally {
                     if (socket != null)
-                        _sockets.Release(socket);
+                        _sockets.Free(socket);
                 }
             }
         }
