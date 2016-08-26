@@ -42,7 +42,7 @@ namespace SimpleDns.Internal {
                 if (!tcs.Task.IsCompleted) {
                     lock(_waiting)
                         _waiting.Remove(tcs);
-                    tcs.TrySetCanceled();
+                    tcs.SetCanceled();
                 }
             });
 
