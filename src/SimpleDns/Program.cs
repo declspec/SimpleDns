@@ -24,41 +24,6 @@ namespace SimpleDns {
     public static class Program {
         private const int UdpPacketSize = 512;
 
-        private static void PrintUsage() {
-            Console.WriteLine("usage: simpledns -h <hostfile> -s <dns (ip:port)> [-l <local (ip:port)>[, -c <max-connections>]]");
-        }
-
-        private static CommandLineApplication ConfigureApplication(CommandLineApplication app, Func<ServerOptions, int> continuation) {
-            var fileArgument = app.Argument("[hostfile]", "Path to your hosts file containing custom DNS records (must be prefixed with #@)");
-            var connOption = app.Option("-c|--connections", "Maximum number of concurrent connections to allow, defaults to 10.", CommandOptionType.SingleValue);
-            var serverOption = app.Option("-s|--server", "IP endpoint of the backing DNS server, defaults to 8.8.8.8:53", CommandOptionType.SingleValue);
-            var localOption = app.Option("-a|--address", "Local endpoint to bind to, defaults to 127.0.0.1:53", CommandOptionType.SingleValue);
-
-            app.HelpOption("-h|-?|--help");
-
-            app.OnExecute(() => {
-                if (string.IsNullOrEmpty(fileArgument.Value)) {
-                    app.ShowHelp();
-                    return 1;
-                }
-
-                var opts = new ServerOptions() { HostsFile = fileArgument.Value };
-
-                if (!TryParseEndPoint(serverOption.Value() ?? "8.8.8.8:53", out opts.DnsServer))
-                    throw new CommandParsingException(app, "invalid format for --server; must be in ip:port format");
-
-                if (!TryParseEndPoint(localOption.Value() ?? "127.0.0.1:53", out opts.LocalServer))
-                    throw new CommandParsingException(app, "invalid format for --address; must be in ip:port format");
-
-                if (!int.TryParse(connOption.Value() ?? "10", out opts.MaximumConnections))
-                    throw new CommandParsingException(app, "invalid value for --connections; must be a positive, non-zero integer");
-
-                return continuation(opts);
-            });
-
-            return app;
-        }
-
         public static int Main(string[] args) {
             var app = new CommandLineApplication() {
                 Name = "simpledns",
@@ -96,6 +61,37 @@ namespace SimpleDns {
                 Console.Error.WriteLine("error: {0}", ex.Message);
                 return 0;
             }
+        }
+
+        private static CommandLineApplication ConfigureApplication(CommandLineApplication app, Func<ServerOptions, int> continuation) {
+            var fileArgument = app.Argument("[hostfile]", "Path to your hosts file containing custom DNS records (must be prefixed with #@)");
+            var connOption = app.Option("-c|--connections", "Maximum number of concurrent connections to allow, defaults to 10.", CommandOptionType.SingleValue);
+            var serverOption = app.Option("-s|--server", "IP endpoint of the backing DNS server, defaults to 8.8.8.8:53", CommandOptionType.SingleValue);
+            var localOption = app.Option("-a|--address", "Local endpoint to bind to, defaults to 127.0.0.1:53", CommandOptionType.SingleValue);
+
+            app.HelpOption("-h|-?|--help");
+
+            app.OnExecute(() => {
+                if (string.IsNullOrEmpty(fileArgument.Value)) {
+                    app.ShowHelp();
+                    return 1;
+                }
+
+                var opts = new ServerOptions() { HostsFile = fileArgument.Value };
+
+                if (!TryParseEndPoint(serverOption.Value() ?? "8.8.8.8:53", out opts.DnsServer))
+                    throw new CommandParsingException(app, "invalid format for --server; must be in ip:port format");
+
+                if (!TryParseEndPoint(localOption.Value() ?? "127.0.0.1:53", out opts.LocalServer))
+                    throw new CommandParsingException(app, "invalid format for --address; must be in ip:port format");
+
+                if (!int.TryParse(connOption.Value() ?? "10", out opts.MaximumConnections))
+                    throw new CommandParsingException(app, "invalid value for --connections; must be a positive, non-zero integer");
+
+                return continuation(opts);
+            });
+
+            return app;
         }
 
         private static async Task RunServer(ServerOptions opts, IPipeline<ISocketContext> pipeline, CancellationToken token) {
