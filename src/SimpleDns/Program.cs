@@ -32,7 +32,7 @@ namespace SimpleDns {
             };
 
             try {
-                return ConfigureApplication(app, opts => {
+                var program = ConfigureApplication(app, opts => {
                     IPipeline<ISocketContext> pipeline;
 
                     try {
@@ -55,7 +55,9 @@ namespace SimpleDns {
                     task.Wait();
 
                     return 0;
-                }).Execute(args);
+                });
+
+                return program.Execute(args);
             }
             catch(CommandParsingException ex) {
                 Console.Error.WriteLine("error: {0}", ex.Message);
