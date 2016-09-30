@@ -52,7 +52,7 @@ namespace SimpleDns.Pipeline {
         }
 
         public Task End() {
-            return Task.FromResult(0);
+            return Task.CompletedTask;
         }
     }
 }
