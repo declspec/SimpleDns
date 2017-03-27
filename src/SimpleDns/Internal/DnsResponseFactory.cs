@@ -35,19 +35,24 @@ namespace SimpleDns.Internal {
 
         private byte[] Lookup(ArraySlice<byte> datagram) {
             var offset = DNS_HEADER_SIZE;
-            var labels = new List<string>();
+            var label = new StringBuilder(256);
 
             while(offset < datagram.Length) {
                 var len = datagram[offset++];
                 if (len == 0)
                     break;
 
-                labels.Add(Encoding.UTF8.GetString(datagram.Array, datagram.Offset + offset, len));
+                // Domain sections don't include the dot separator, so it needs to label
+                // manually inserted between each label
+                if (label.Length > 0)
+                    label.Append('.');
+                label.Append(Encoding.UTF8.GetString(datagram.Array, datagram.Offset + offset, len));
+
                 offset += len;
             }
 
             var question = new Question(
-                string.Join(".", labels), 
+                label.ToString(), 
                 ToUInt16(datagram, offset), 
                 ToUInt16(datagram, offset + 2)
             );

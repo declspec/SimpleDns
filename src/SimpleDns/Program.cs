@@ -105,11 +105,11 @@ namespace SimpleDns {
                 var args = new SocketAsyncEventArgsEx(buffer, UdpPacketSize * n, UdpPacketSize);
                 return new AsyncSocketWrapper(args);
             });
-
+        
             using (var master = new Socket(opts.LocalServer.AddressFamily, SocketType.Dgram, ProtocolType.Udp)) {
                 master.Bind(opts.LocalServer);
 
-                while(true) {
+                while(!token.IsCancellationRequested) {
                     var wrapper = await pool.Acquire(token);
                     wrapper.Wrap(master);
                     wrapper.EventArgs.ResetBuffer();
