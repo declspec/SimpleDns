@@ -5,6 +5,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using SimpleDns.Internal;
 using SimpleDns.Network;
+using Pipeliner.Features;
 
 namespace SimpleDns.Pipeline {
     public interface ISocketContext {
@@ -12,6 +13,7 @@ namespace SimpleDns.Pipeline {
         ArraySlice<byte> Data { get; }
         AsyncSocketWrapper SocketWrapper { get; }
         CancellationToken CancellationToken { get; }
+        IFeatureCollection Features { get; }
 
         Task End(ArraySlice<byte> response);
         Task End();
@@ -22,6 +24,7 @@ namespace SimpleDns.Pipeline {
         public ArraySlice<byte> Data { get; }
         public AsyncSocketWrapper SocketWrapper { get; }
         public CancellationToken CancellationToken { get; }
+        public IFeatureCollection Features { get; }
 
         private readonly EndPoint _client;
         private readonly Socket _socket;        
@@ -30,6 +33,7 @@ namespace SimpleDns.Pipeline {
             Data = data;
             SocketWrapper = socketWrapper;
             CancellationToken = token;
+            Features = new FeatureCollection();
 
             // Store the original socket for later use
             _socket = SocketWrapper.Socket;

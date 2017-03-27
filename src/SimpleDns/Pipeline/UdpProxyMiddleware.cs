@@ -26,8 +26,10 @@ namespace SimpleDns.Pipeline {
             var cancellationHandler = new Action(() => {
                 // If the token gets cancelled we dispose the underlying socket
                 // which will force any async method to shutdown with an error.
-                if (socket != null)
+                if (socket != null) {
+                    _sockets.Remove(socket);
                     socket.Dispose();
+                }
             });
 
             using(context.CancellationToken.Register(cancellationHandler, false)) {

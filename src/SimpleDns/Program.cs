@@ -36,12 +36,12 @@ namespace SimpleDns {
                     IPipeline<ISocketContext> pipeline;
 
                     try {
-                        var records = ReadResourceRecords(opts.HostsFile).ToList();
-                        var responseFactory = new DnsResponseFactory(records);
+                        var responseFactory = new DnsResponseFactory();
 
                         pipeline = new PipelineBuilder<ISocketContext>()
-                            //.UseMiddleware(new PacketDumpMiddleware(Console.Out))
-                            .UseMiddleware(new DnsMiddleware(responseFactory))
+                            .UseMiddleware(new DnsQueryParserMiddleware())
+                            .UseMiddleware(new DnsQueryLoggingMiddleware(Console.Out))
+                            .UseMiddleware(new LocalDnsMiddleware(opts.HostsFile, responseFactory))
                             .UseMiddleware(new UdpProxyMiddleware(opts.DnsServer))
                             .Build(async context => await context.End());
                     }
@@ -52,7 +52,7 @@ namespace SimpleDns {
 
                     var task = RunServer(opts, pipeline, CancellationToken.None);
                     Console.WriteLine("info: dns started");
-                    task.Wait();
+                    Task.WaitAll(task);
 
                     return 0;
                 });
@@ -142,30 +142,6 @@ namespace SimpleDns {
                         Console.WriteLine("error: {0}", e.Message);
                         pool.Free(wrapper);
                     }
-                }
-            }
-        }
-
-        private static IEnumerable<ResourceRecord> ReadResourceRecords(string file) {
-            using(var fs = new FileStream(file, FileMode.Open, FileAccess.Read))
-            using(var sr = new StreamReader(fs)) {
-                string line = null;
-                while((line = sr.ReadLine()) != null) {
-                    if (!line.StartsWith("#@"))
-                        continue;
-
-                    line = line.Substring(2).Trim();
-                    ResourceRecord record = null;
-
-                    try {
-                        record = ResourceRecord.Parse(line);
-                    }
-                    catch(FormatException f) {
-                        Console.WriteLine("warning: skipping '{0}' ({1})", line, f.Message);
-                    }
-
-                    if (record != null)
-                        yield return record;
                 }
             }
         }
