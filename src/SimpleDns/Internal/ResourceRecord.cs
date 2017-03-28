@@ -56,5 +56,16 @@ namespace SimpleDns.Internal {
 
             return new ResourceRecord(ip, ttl, re);
         }
+
+        public static bool TryParse(string str, out ResourceRecord record) {
+            try {
+                record = Parse(str);
+                return true;
+            }
+            catch(FormatException) {
+                record = null;
+                return false;
+            }
+        }
     } 
 }
