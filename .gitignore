@@ -4,6 +4,8 @@ obj/
 .vscode/
 Debug/
 Release/
+Properties/
+
 *.lock.json
 *.log
 *.cmd
