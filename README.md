@@ -40,7 +40,7 @@ Or on Linux
 ```bash
 dotnet run \
     --configuration=Release \
-    --project=src\SimpleDns\SimpleDns.csproj \
+    --project=src/SimpleDns/SimpleDns.csproj \
     -- \
     "/etc/hosts"
 ```
